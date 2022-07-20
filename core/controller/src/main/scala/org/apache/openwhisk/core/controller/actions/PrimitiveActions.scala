@@ -646,7 +646,9 @@ protected[actions] trait PrimitiveActions {
               LoggingMarkers.CONTROLLER_ACTIVATION_BLOCKING_DATABASE_RETRIEVAL,
               s"retrieved activation for blocking invocation via DB polling",
               logLevel = InfoLevel)
-            result.trySuccess(Right(activation.withoutLogs))
+            // result.trySuccess(Right(activation.withoutLogs))
+            // Change to withoutLogsOrResult to verify assumption, needs to be undone later on again!!!
+            result.trySuccess(Right(activation.withoutLogsOrResult))
           case Failure(_: NoDocumentException) => pollActivation(docid, context, result, wait, retries + 1, maxRetries)
           case Failure(t: Throwable)           => result.tryFailure(t)
         }
