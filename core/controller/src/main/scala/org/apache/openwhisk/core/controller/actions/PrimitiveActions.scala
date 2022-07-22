@@ -598,24 +598,33 @@ protected[actions] trait PrimitiveActions {
     val result = Promise[Either[ActivationId, WhiskActivation]]
     val docid = new DocId(WhiskEntity.qualifiedName(user.namespace.name.toPath, activationId))
     logging.debug(this, s"action activation will block for result upto $totalWaitTime")
+    logging.info(this, s"### action activation '${activationId}' will block for result upto $totalWaitTime")
 
     // 1. Wait for the active-ack to happen. Either immediately resolve the promise or poll the database quickly
     //    in case of an incomplete active-ack (record too large for example).
     activeAckResponse.foreach {
       case Right(activation) => result.trySuccess(Right(activation))
       case _ if (controllerActivationConfig.pollingFromDb) =>
+        // logging.info(this, s"### action activation '${activationId}' will pollActivation from DB")
         pollActivation(docid, context, result, i => 1.seconds + (2.seconds * i), maxRetries = 4)
       case Left(activationId) =>
+        // logging.info(this, s"### action activation '${activationId}' will not pollActivation from DB")
         result.trySuccess(Left(activationId)) // complete the future immediately if it's configured to not poll db for blocking activations
     }
+
+    logging.info(this, s"### action activation '${activationId}' will pollActivation again, this time slowly from DB")
 
     if (controllerActivationConfig.pollingFromDb) {
       // 2. Poll the database slowly in case the active-ack never arrives
       pollActivation(docid, context, result, _ => 15.seconds)
     }
 
+    logging.info(this, s"### action activation '${activationId}' will fallback to return activationid")
+
     // 3. Timeout forces a fallback to activationId
     val timeout = actorSystem.scheduler.scheduleOnce(totalWaitTime)(result.trySuccess(Left(activationId)))
+
+    logging.info(this, s"### action activation '${activationId}' before end (result.future.andThen)")
 
     result.future.andThen {
       case _ => timeout.cancel()
@@ -637,6 +646,8 @@ protected[actions] trait PrimitiveActions {
                              wait: Int => FiniteDuration,
                              retries: Int = 0,
                              maxRetries: Int = Int.MaxValue)(implicit transid: TransactionId): Unit = {
+    logging.info(this, s"### pollActivation, retries='${retries}', maxRetries='${maxRetries}', wait='${wait}' will pollActivation from DB")
+
     if (!result.isCompleted && retries < maxRetries) {
       val schedule = actorSystem.scheduler.scheduleOnce(wait(retries)) {
         activationStore.get(ActivationId(docid.asString), context).onComplete {
